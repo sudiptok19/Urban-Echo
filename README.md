@@ -1,4 +1,4 @@
-- # Urban Echo 🌆🔊
+# 🌆 Urban Echo 🔊
 
 Urban Echo is a civic engagement platform that empowers citizens to report local issues, upvote community concerns, and collaborate with authorities to drive real change in urban areas.
 
