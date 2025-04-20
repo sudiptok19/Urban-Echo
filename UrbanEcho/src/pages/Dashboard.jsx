@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react'
-import { useAuth } from '../contexts/AuthContext'
-import { supabase } from '../config/supabaseClient'
-import Sidebar from '../components/Sidebar'
-import ReportModal from '../components/ReportModal'
-import IssueCard from '../components/IssueCard'
-import LocationModal from '../components/LocationModal'
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../config/supabaseClient';
+import Sidebar from '../components/Sidebar';
+import ReportModal from '../components/ReportModal';
+import IssueCard from '../components/IssueCard';
+import LocationModal from '../components/LocationModal';
+import NotificationBell from '../components/NotificationBell';
+import NotificationModal from '../components/NotificationModal';
 
-const Header = ({ onReportClick }) => (
+const Header = ({ onReportClick, notifications, onNotificationClick }) => (
   <header className="bg-white shadow-sm p-4">
     <div className="flex justify-between items-center">
       <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
@@ -20,6 +23,10 @@ const Header = ({ onReportClick }) => (
           />
           <i className="fas fa-search absolute left-3 top-2.5 text-gray-400"></i>
         </div>
+        <NotificationBell 
+          notifications={notifications}
+          onClick={onNotificationClick}
+        />
         {/* Report Issue Button */}
         <button
           onClick={onReportClick}
@@ -81,17 +88,76 @@ const Pagination = () => (
 )
 
 const Dashboard = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [showReportModal, setShowReportModal] = useState(false);
   const [issues, setIssues] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showLocationModal, setShowLocationModal] = useState(false);
-  const { user } = useAuth();
+  const [notifications, setNotifications] = useState([]);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState(null);
 
   useEffect(() => {
-    if (user) {
-      checkUserLocation();
+    const checkAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          console.log('No session found, redirecting to login');
+          navigate('/login', { replace: true });
+          return;
+        }
+
+        // Verify user is not an admin
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('user_type')
+          .eq('id', session.user.id)
+          .single();
+
+        if (profileData?.user_type === 'authority') {
+          console.log('Admin user detected, redirecting to admin dashboard');
+          navigate('/admin', { replace: true });
+          return;
+        }
+
+        // Load dashboard data
+        await Promise.all([
+          fetchIssues(),
+          checkUserLocation(),
+          fetchNotifications()
+        ]);
+      } catch (error) {
+        console.error('Auth check error:', error);
+        navigate('/login', { replace: true });
+      }
+    };
+
+    checkAuth();
+  }, [navigate]);
+
+  const fetchIssues = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('reports')
+        .select(`
+          *,
+          user:users(name),
+          upvotes:report_upvotes(count)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setIssues(data || []);
+    } catch (error) {
+      console.error('Error fetching issues:', error);
+    } finally {
+      setLoading(false);
     }
-  }, [user]);
+  };
 
   const checkUserLocation = async () => {
     try {
@@ -168,6 +234,26 @@ const Dashboard = () => {
     }
   };
 
+  const fetchNotifications = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setNotifications(data || []);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
+  };
+
+  const handleNotificationClick = (notification) => {
+    setSelectedNotification(notification);
+    setShowNotificationModal(true);
+  };
+
   if (!user) return null;
 
   return (
@@ -175,24 +261,22 @@ const Dashboard = () => {
       <Sidebar user={user} userLocation={userLocation} />
       
       <div className="flex-1 overflow-auto">
-        <Header />
+        <Header 
+          onReportClick={() => setShowReportModal(true)}
+          notifications={notifications}
+          onNotificationClick={() => setShowNotificationModal(true)}
+        />
         
         <main className="p-6">
-          {showLocationModal ? (
-            <LocationModal
-              isOpen={true}
-              onClose={() => {}}
-              user={user}
-              required={true}
-              onLocationUpdate={handleLocationUpdate}
-            />
-          ) : loading ? (
-            <div className="flex items-center justify-center h-[calc(100vh-100px)]">
+          <StatsCards />
+          <FiltersSection />
+          
+          {loading ? (
+            <div className="flex items-center justify-center h-48">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             </div>
           ) : (
             <>
-              <FiltersSection />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {issues.map(issue => (
                   <IssueCard 
@@ -201,18 +285,52 @@ const Dashboard = () => {
                     userLocation={userLocation}
                   />
                 ))}
-                {issues.length === 0 && (
-                  <div className="col-span-full text-center py-12">
-                    <p className="text-gray-500">No issues reported in your area yet.</p>
-                  </div>
-                )}
               </div>
+              {issues.length === 0 && (
+                <div className="text-center py-12">
+                  <p className="text-gray-500">No issues reported in your area yet.</p>
+                </div>
+              )}
+              <Pagination />
             </>
           )}
         </main>
+
+        {showReportModal && (
+          <ReportModal
+            isOpen={showReportModal}
+            onClose={() => setShowReportModal(false)}
+            onSubmit={async (data) => {
+              await fetchIssues();
+              setShowReportModal(false);
+            }}
+            userLocation={userLocation}
+          />
+        )}
+
+        {showLocationModal && (
+          <LocationModal
+            isOpen={showLocationModal}
+            onClose={() => setShowLocationModal(false)}
+            user={user}
+            onLocationUpdate={handleLocationUpdate}
+          />
+        )}
+
+        {showNotificationModal && (
+          <NotificationModal
+            isOpen={showNotificationModal}
+            onClose={() => setShowNotificationModal(false)}
+            notification={selectedNotification}
+            onConfirm={async (response) => {
+              await fetchNotifications();
+              setShowNotificationModal(false);
+            }}
+          />
+        )}
       </div>
     </div>
   );
 };
 
-export default Dashboard
+export default Dashboard;

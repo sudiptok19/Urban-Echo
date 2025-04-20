@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 
 const navigationItems = [
-  { path: '/dashboard', icon: 'fas fa-home', label: 'Dashboard' },
+  { path: '/Dashboard', icon: 'fas fa-home', label: 'Dashboard' },
   { path: '/nearby', icon: 'fas fa-map-marker-alt', label: 'Nearby Issues' },
   { path: '/my-reports', icon: 'fas fa-list', label: 'My Reports' },
   { path: '/resolved', icon: 'fas fa-check-circle', label: 'Resolved Issues' },
