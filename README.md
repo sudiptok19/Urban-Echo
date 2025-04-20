@@ -4,7 +4,7 @@ Urban Echo is a civic engagement platform that empowers citizens to report local
 
 Built during Hack4Bengal 2025, Urban Echo was developed by a passionate student team from Techno Main SAlt Lake aiming to make civic voices louder and urban problems impossible to ignore.
 
-So from the Next time "Don’t Just Complain — Echo It!"
+So from the Next time **"Don’t Just Complain — Echo It!"**
 
 ## 🚀 Features
 
