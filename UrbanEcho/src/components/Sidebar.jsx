@@ -1,22 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../config/supabaseClient';
 import LocationModal from './LocationModal';
 import { useAuth } from '../contexts/AuthContext';
 
-
-
 const navigationItems = [
-  { path: '/Dashboard', icon: 'fas fa-home', label: 'Dashboard' },
-  { path: '/nearby', icon: 'fas fa-map-marker-alt', label: 'Nearby Issues' },
-  { path: '/my-reports', icon: 'fas fa-list', label: 'My Reports' },
-  { path: '/resolved', icon: 'fas fa-check-circle', label: 'Resolved Issues' },
-  { path: '/settings', icon: 'fas fa-cog', label: 'Settings' },
-  { path: '/', icon: 'fas fa-sign-out-alt', label: 'Logout' },
+  { path: '/', icon: 'fas fa-home', label: 'Home' },
+  { path: '/dashboard', icon: 'fas fa-tachometer-alt', label: 'Dashboard' },
+  { path: '/resolved', icon: 'fas fa-check-circle', label: 'Resolved Issues' }
 ];
 
 const Sidebar = ({ user, isAuthority = false, onLocationUpdate }) => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
   const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
   const [imageError, setImageError] = useState(false);
   const [showLocationModal, setShowLocationModal] = useState(false);
@@ -28,18 +25,28 @@ const Sidebar = ({ user, isAuthority = false, onLocationUpdate }) => {
 
   const fetchUserLocation = async () => {
     if (!user) return;
-    
+
     try {
       const { data, error } = await supabase
         .from('user_locations')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle(); // <-- use maybeSingle instead of single
 
       if (error) throw error;
       setUserLocation(data);
     } catch (error) {
       console.error('Error fetching location:', error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      navigate('/login'); // or navigate('/') if you want
+      // Optionally: window.location.reload();
+    } catch (error) {
+      console.error('Error logging out:', error.message);
     }
   };
 
@@ -141,6 +148,17 @@ const Sidebar = ({ user, isAuthority = false, onLocationUpdate }) => {
           onLocationUpdate?.(location);
         }}
       />
+
+      {/* Updated Logout Button */}
+      <div className="absolute bottom-4 w-full px-4">
+        <button
+          onClick={handleLogout}
+          className="mt-auto flex items-center p-2 rounded hover:bg-red-700 "
+        >
+          <i className="fas fa-sign-out-alt mr-2"></i>
+          Logout
+        </button>
+      </div>
     </div>
   );
 };

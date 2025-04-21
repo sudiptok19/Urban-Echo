@@ -10,10 +10,13 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check active sessions and sets the user
-    const session = supabase.auth.getSession();
-    setUser(session?.user ?? null);
-    setLoading(false);
+    // Check active sessions and set the user
+    const getCurrentSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
+      setLoading(false);
+    };
+    getCurrentSession();
 
     // Listen for changes on auth state (login, sign out, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -26,6 +29,7 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
+    setUser, // <-- expose setUser so login can update context immediately
     loading
   };
 

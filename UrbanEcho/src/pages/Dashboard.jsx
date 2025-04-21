@@ -1,40 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react'
+import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../config/supabaseClient'
+import Sidebar from '../components/Sidebar'
+import ReportModal from '../components/ReportModal'
+import IssueCard from '../components/IssueCard'
+import LocationModal from '../components/LocationModal'
+import ReportIssueDialog from '../components/ReportIssueDialog'
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../config/supabaseClient';
-import Sidebar from '../components/Sidebar';
-import ReportModal from '../components/ReportModal';
-import IssueCard from '../components/IssueCard';
-import LocationModal from '../components/LocationModal';
-import NotificationBell from '../components/NotificationBell';
-import NotificationModal from '../components/NotificationModal';
 
-const Header = ({ onReportClick, notifications, onNotificationClick }) => (
+const Header = () => (
   <header className="bg-white shadow-sm p-4">
     <div className="flex justify-between items-center">
       <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
-      <div className="flex items-center gap-4">
-        {/* Search Bar */}
-        <div className="relative">
-          <input 
-            type="text" 
-            placeholder="Search issues..." 
-            className="w-64 pl-10 pr-4 py-2 bg-gray-100 border border-gray-300 rounded-full text-sm text-gray-700 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          <i className="fas fa-search absolute left-3 top-2.5 text-gray-400"></i>
-        </div>
-        <NotificationBell 
-          notifications={notifications}
-          onClick={onNotificationClick}
-        />
-        {/* Report Issue Button */}
-        <button
-          onClick={onReportClick}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
-        >
-          Report Issue
-        </button>
-      </div>
     </div>
   </header>
 )
@@ -87,79 +64,85 @@ const Pagination = () => (
   </div>
 )
 
+const calculateDistance = (location1, location2) => {
+  // Simple placeholder - replace with actual distance calculation if needed
+  return 'N/A';
+};
+
 const Dashboard = () => {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  const [showReportModal, setShowReportModal] = useState(false);
   const [issues, setIssues] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showLocationModal, setShowLocationModal] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [showNotificationModal, setShowNotificationModal] = useState(false);
-  const [selectedNotification, setSelectedNotification] = useState(null);
+  const [showReportDialog, setShowReportDialog] = useState(false);
+  const [userReports, setUserReports] = useState([]);
+  const [upvotes, setUpvotes] = useState({});
+  const [userUpvotes, setUserUpvotes] = useState({});
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          console.log('No session found, redirecting to login');
-          navigate('/login', { replace: true });
-          return;
-        }
-
-        // Verify user is not an admin
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('user_type')
-          .eq('id', session.user.id)
-          .single();
-
-        if (profileData?.user_type === 'authority') {
-          console.log('Admin user detected, redirecting to admin dashboard');
-          navigate('/admin', { replace: true });
-          return;
-        }
-
-        // Load dashboard data
-        await Promise.all([
-          fetchIssues(),
-          checkUserLocation(),
-          fetchNotifications()
-        ]);
-      } catch (error) {
-        console.error('Auth check error:', error);
-        navigate('/login', { replace: true });
-      }
-    };
-
-    checkAuth();
-  }, [navigate]);
-
-  const fetchIssues = async () => {
+  // Update the fetchReports function
+  const fetchReports = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      
+      // Modified query to remove the profiles join
+      const { data: reports, error } = await supabase
         .from('reports')
         .select(`
           *,
-          user:users(name),
-          upvotes:report_upvotes(count)
+          report_upvotes (
+            id,
+            user_id
+          )
         `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setIssues(data || []);
+
+      if (reports) {
+        console.log('All reports:', reports);
+        
+        // Set all reports for community section
+        setIssues(reports);
+        
+        // Filter user's reports
+        const userReportsFiltered = reports.filter(report => report.user_id === user.id);
+        setUserReports(userReportsFiltered);
+        
+        // Calculate upvotes
+        const upvoteCounts = {};
+        const userVotes = {};
+        
+        reports.forEach(report => {
+          upvoteCounts[report.id] = report.report_upvotes?.length || 0;
+          userVotes[report.id] = report.report_upvotes?.some(
+            upvote => upvote.user_id === user.id
+          ) || false;
+        });
+
+        setUpvotes(upvoteCounts);
+        setUserUpvotes(userVotes);
+      }
     } catch (error) {
-      console.error('Error fetching issues:', error);
+      console.error('Error fetching reports:', error);
     } finally {
       setLoading(false);
     }
   };
 
+  // Add useEffect to fetch reports on mount and location change
+
+  useEffect(() => {
+    if (user) {
+      fetchReports();
+      checkUserLocation();
+    }
+  }, [user]);
+
   const checkUserLocation = async () => {
+    if (!user) return;
+
     try {
       const { data, error } = await supabase
         .from('user_locations')
@@ -168,7 +151,7 @@ const Dashboard = () => {
         .single();
 
       if (error) {
-        if (error.code === 'PGRST116') { // No data found
+        if (error.code === 'PGRST116') {
           setShowLocationModal(true);
         } else {
           throw error;
@@ -177,38 +160,46 @@ const Dashboard = () => {
 
       if (data) {
         setUserLocation(data);
-        await fetchLocationBasedFeed(data.pincode);
       }
     } catch (error) {
       console.error('Error checking location:', error);
       setShowLocationModal(true);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const fetchLocationBasedFeed = async (pincode) => {
+  const fetchUpvotes = async () => {
     try {
-      setLoading(true);
-      
-      // Fetch issues from the same pincode or nearby areas
-      const { data, error } = await supabase
-        .from('issues')
-        .select(`
-          *,
-          user_locations (city, state),
-          profiles (name)
-        `)
-        .eq('pincode', pincode)
-        .order('created_at', { ascending: false });
+      // Fetch all upvotes
+      const { data: upvoteData, error: upvoteError } = await supabase
+        .from('report_upvotes')
+        .select('report_id');
 
-      if (error) throw error;
-      
-      setIssues(data || []);
+      if (upvoteError) throw upvoteError;
+
+      // Count upvotes for each report
+      const upvoteCounts = upvoteData.reduce((acc, curr) => {
+        acc[curr.report_id] = (acc[curr.report_id] || 0) + 1;
+        return acc;
+      }, {});
+
+      // Fetch user's upvotes
+      const { data: userUpvoteData, error: userUpvoteError } = await supabase
+        .from('report_upvotes')
+        .select('report_id')
+        .eq('user_id', user.id);
+
+      if (userUpvoteError) throw userUpvoteError;
+
+      // Create map of user's upvotes
+      const userUpvoteMap = userUpvoteData.reduce((acc, curr) => {
+        acc[curr.report_id] = true;
+        return acc;
+      }, {});
+
+      setUpvotes(upvoteCounts);
+      setUserUpvotes(userUpvoteMap);
     } catch (error) {
-      console.error('Error fetching feed:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching upvotes:', error);
     }
   };
 
@@ -234,24 +225,129 @@ const Dashboard = () => {
     }
   };
 
-  const fetchNotifications = async () => {
+  const handleReportSubmit = async (formData) => {
     try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      let pictureUrl = null;
+      
+      if (formData.picture) {
+        // Create a unique filename with timestamp and random number
+        const timestamp = Date.now();
+        const random = Math.random();
+        const fileName = `${timestamp}_${random}${path.extname(formData.picture.name)}`;
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('report-pictures')
+          .upload(fileName, formData.picture, {
+            cacheControl: '3600',
+            upsert: false
+          });
 
-      if (error) throw error;
-      setNotifications(data || []);
+        if (uploadError) throw uploadError;
+
+        // Construct the public URL in the correct format
+        pictureUrl = `${process.env.REACT_APP_SUPABASE_URL}/storage/v1/object/public/report-pictures/${fileName}`;
+        
+        // Alternative way to get the URL using Supabase client
+        // const { data: { publicUrl } } = supabase.storage
+        //   .from('report-pictures')
+        //   .getPublicUrl(fileName);
+        // pictureUrl = publicUrl;
+      }
+
+      const { data, error: insertError } = await supabase
+        .from('reports')
+        .insert({
+          user_id: user.id,
+          title: formData.title,
+          description: formData.description,
+          category: formData.category,
+          location: formData.location,
+          picture_url: pictureUrl,
+          status: 'pending'
+        })
+        .select();
+
+      if (insertError) throw insertError;
+
+      // Update both lists and refresh data
+      await fetchReports();
+      setShowReportDialog(false);
+      alert('Report submitted successfully!');
     } catch (error) {
-      console.error('Error fetching notifications:', error);
+      console.error('Error submitting report:', error);
+      alert('Failed to submit report. Please try again.');
     }
   };
 
-  const handleNotificationClick = (notification) => {
-    setSelectedNotification(notification);
-    setShowNotificationModal(true);
+  const handleDeleteReport = async (reportId) => {
+    if (window.confirm('Are you sure you want to delete this report?')) {
+      try {
+        const { error } = await supabase
+          .from('reports')
+          .delete()
+          .eq('id', reportId)
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        // Update both lists
+        setUserReports(prevReports => 
+          prevReports.filter(report => report.id !== reportId)
+        );
+        setIssues(prevIssues =>
+          prevIssues.filter(report => report.id !== reportId)
+        );
+      } catch (error) {
+        console.error('Error deleting report:', error);
+        alert('Failed to delete report. Please try again.');
+      }
+    }
+  };
+
+  const handleUpvote = async (reportId) => {
+    try {
+      if (userUpvotes[reportId]) {
+        // Remove upvote
+        const { error } = await supabase
+          .from('report_upvotes')
+          .delete()
+          .eq('report_id', reportId)
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        setUpvotes(prev => ({
+          ...prev,
+          [reportId]: (prev[reportId] || 1) - 1
+        }));
+        setUserUpvotes(prev => ({
+          ...prev,
+          [reportId]: false
+        }));
+      } else {
+        // Add upvote
+        const { error } = await supabase
+          .from('report_upvotes')
+          .insert({
+            report_id: reportId,
+            user_id: user.id
+          });
+
+        if (error) throw error;
+
+        setUpvotes(prev => ({
+          ...prev,
+          [reportId]: (prev[reportId] || 0) + 1
+        }));
+        setUserUpvotes(prev => ({
+          ...prev,
+          [reportId]: true
+        }));
+      }
+    } catch (error) {
+      console.error('Error toggling upvote:', error);
+      alert('Failed to update upvote. Please try again.');
+    }
   };
 
   if (!user) return null;
@@ -261,76 +357,115 @@ const Dashboard = () => {
       <Sidebar user={user} userLocation={userLocation} />
       
       <div className="flex-1 overflow-auto">
-        <Header 
-          onReportClick={() => setShowReportModal(true)}
-          notifications={notifications}
-          onNotificationClick={() => setShowNotificationModal(true)}
-        />
+        <Header />
         
         <main className="p-6">
           <StatsCards />
-          <FiltersSection />
           
-          {loading ? (
-            <div className="flex items-center justify-center h-48">
+          {showLocationModal ? (
+            <LocationModal
+              isOpen={true}
+              onClose={() => {}}
+              user={user}
+              required={true}
+              onLocationUpdate={handleLocationUpdate}
+            />
+          ) : loading ? (
+            <div className="flex items-center justify-center h-[calc(100vh-100px)]">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {issues.map(issue => (
-                  <IssueCard 
-                    key={issue.id} 
-                    issue={issue}
-                    userLocation={userLocation}
-                  />
-                ))}
-              </div>
-              {issues.length === 0 && (
-                <div className="text-center py-12">
-                  <p className="text-gray-500">No issues reported in your area yet.</p>
+              {/* User Reports Section */}
+              <div className="mb-8">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-2xl font-bold text-gray-800">My Reports</h2>
+                  {/* <button
+                    onClick={() => setShowReportDialog(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  >
+                    <i className="fas fa-plus mr-2"></i>
+                    New Report
+                  </button> */}
                 </div>
-              )}
-              <Pagination />
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {userReports.map((report) => (
+                    <IssueCard 
+                      key={report.id}
+                      issue={{
+                        ...report,
+                        reporter: 'Anonymous', // Simplified since we don't have profiles
+                        reporterImage: '/default-avatar.jpg', // Use default avatar
+                        timeAgo: new Date(report.created_at).toLocaleDateString(),
+                        upvotes: upvotes[report.id] || 0,
+                        distance: userLocation ? `${calculateDistance(userLocation, report.location)} km` : 'Unknown'
+                      }}
+                      onUpvote={handleUpvote}
+                    />
+                  ))}
+                  {userReports.length === 0 && (
+                    <div className="col-span-full text-center py-12 bg-white rounded-lg shadow">
+                      <i className="fas fa-file-alt text-gray-400 text-4xl mb-4"></i>
+                      <p className="text-gray-500">No reports submitted yet.</p>
+                      <button
+                        onClick={() => setShowReportDialog(true)}
+                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Submit Your First Report
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Community Reports Section */}
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-gray-800 mb-4">Community Reports</h2>
+                <FiltersSection />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {issues.map((report) => (
+                    <IssueCard 
+                      key={report.id}
+                      issue={{
+                        ...report,
+                        reporter: 'Anonymous', // Simplified since we don't have profiles
+                        reporterImage: '/default-avatar.jpg', // Use default avatar
+                        timeAgo: new Date(report.created_at).toLocaleDateString(),
+                        upvotes: upvotes[report.id] || 0,
+                        distance: userLocation ? `${calculateDistance(userLocation, report.location)} km` : 'Unknown'
+                      }}
+                      onUpvote={handleUpvote}
+                    />
+                  ))}
+                  {issues.length === 0 && (
+                    <div className="col-span-full text-center py-12 bg-white rounded-lg shadow">
+                      <i className="fas fa-file-alt text-gray-400 text-4xl mb-4"></i>
+                      <p className="text-gray-500">No reports submitted yet.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </>
           )}
         </main>
-
-        {showReportModal && (
-          <ReportModal
-            isOpen={showReportModal}
-            onClose={() => setShowReportModal(false)}
-            onSubmit={async (data) => {
-              await fetchIssues();
-              setShowReportModal(false);
-            }}
-            userLocation={userLocation}
-          />
-        )}
-
-        {showLocationModal && (
-          <LocationModal
-            isOpen={showLocationModal}
-            onClose={() => setShowLocationModal(false)}
-            user={user}
-            onLocationUpdate={handleLocationUpdate}
-          />
-        )}
-
-        {showNotificationModal && (
-          <NotificationModal
-            isOpen={showNotificationModal}
-            onClose={() => setShowNotificationModal(false)}
-            notification={selectedNotification}
-            onConfirm={async (response) => {
-              await fetchNotifications();
-              setShowNotificationModal(false);
-            }}
-          />
-        )}
       </div>
+
+      <button
+        onClick={() => setShowReportDialog(true)}
+        className="fixed bottom-8 right-8 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700"
+      >
+        <i className="fas fa-plus mr-2"></i>
+        Report Issue
+      </button>
+
+      <ReportIssueDialog
+        isOpen={showReportDialog}
+        onClose={() => setShowReportDialog(false)}
+        onSubmit={handleReportSubmit}
+      />
     </div>
   );
 };
 
-export default Dashboard;
+export default Dashboard

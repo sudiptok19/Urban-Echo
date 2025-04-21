@@ -1,18 +1,14 @@
 import React from 'react'
 import Navbar from '../components/Navbar';
 import HeroSection from '../components/HeroSection';
-// import FeaturesSection from '../components/FeaturesSection';
 import Footer from '../components/Footer';
-
-
 
 export default function Home() {
   return (
-    <div className="bg-gray-50">
+    <div className="bg-gray-50 min-h-screen">
       <Navbar />
       <main className="container mx-auto mt-10 px-4">
         <HeroSection />
-        {/* <FeaturesSection /> */}
       </main>
       <Footer />
       <style>{`
@@ -26,4 +22,4 @@ export default function Home() {
       `}</style>
     </div>
   );
-};
+}

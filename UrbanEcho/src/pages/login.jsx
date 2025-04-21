@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../config/supabaseClient';
+import { useAuth } from '../contexts/AuthContext';
 
 const Login = () => {
   const navigate = useNavigate();
+  const { setUser } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -19,7 +21,6 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // Step 1: Authenticate user
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
@@ -27,30 +28,20 @@ const Login = () => {
 
       if (authError) throw authError;
 
-      if (!authData?.user?.id) {
+      if (!authData?.user) {
         throw new Error('Authentication failed');
       }
 
-      // Step 2: Check if user exists in profiles (admin) table
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('user_type')
-        .eq('id', authData.user.id)
-        .single();
+      setUser(authData.user);
 
-      if (profileData && profileData.user_type === 'authority') {
-        console.log('Admin user detected, navigating to admin dashboard');
-        navigate('/admin', { replace: true });
-        return;
+      const userType = authData.user.user_metadata?.user_type;
+      if (userType === 'authority') {
+        navigate('/Dashboard_admin', { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
       }
-
-      // If not an admin, treat as citizen
-      console.log('Citizen user detected, navigating to dashboard');
-      navigate('/dashboard', { replace: true });
-
     } catch (error) {
-      console.error('Login error:', error);
-      setError(error.message || 'An error occurred during login');
+      setError(error.message);
     } finally {
       setLoading(false);
     }
@@ -60,7 +51,17 @@ const Login = () => {
     <>
       <nav className="bg-blue-600 text-white p-4">
         <div className="container mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Urban Echo</h1>
+          <div 
+            className="flex items-center cursor-pointer" 
+            onClick={() => navigate('/')}
+          >
+            <img 
+              src="/logo.png" 
+              alt="Urban Echo Logo" 
+              className="h-8 w-8 mr-2 rounded-full"
+            />
+            <h1 className="text-2xl font-bold">Urban Echo</h1>
+          </div>
           <Link to="/signup" className="px-4 py-2 rounded hover:bg-blue-700">Sign Up</Link>
         </div>
       </nav>
